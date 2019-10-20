@@ -1,0 +1,8 @@
+.DS_Store
+/.build
+/Packages
+/*.xcodeproj
+xcuserdata/
+/generated/*.png
+*.idx3-ubyte
+*.idx1-ubyte
