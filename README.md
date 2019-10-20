@@ -34,7 +34,7 @@ let criticDiscriminationLoss = genCriticScore.reduceMean() - realCriticScore.red
 // Compute the gradient of the critic score wrt. the input of the critic.
 // By setting the retainBackwardsGraph flag to true, the compute graph of the backpropagation is captured.
 let grad = criticScore.gradients(of: [mixed], retainBackwardsGraph: true)[0]
-let tmp = (grad * grad).reduceSum(along: [1]).sqrt() - 1
+let tmp = sqrt((grad * grad).reduceSum(along: [1])) - 1
 
 // Compute a loss that constrains the magnitude of the gradient to 1. 
 let gradientPenaltyLoss = 10 * (tmp * tmp).reduceMean()
