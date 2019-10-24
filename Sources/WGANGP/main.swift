@@ -28,7 +28,7 @@ import Foundation
 import AppKit
 
 
-let ((originalImage, labelsCategorical), _) = loadMNIST(from: "./MNIST/", type: Float.self, device: CPU.self)
+let (originalImage, labelsCategorical) = loadMNIST(from: "./MNIST/", type: Float.self, device: CPU.self)
 
 let images = originalImage.view(as: [-1, 28 * 28])
 let labels = labelsCategorical.oneHotEncoded(dim: 10, type: Float.self)
