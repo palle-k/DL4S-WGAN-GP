@@ -30,7 +30,7 @@ import AppKit
 
 let (originalImage, labelsCategorical) = loadMNIST(from: "./MNIST/", type: Float.self, device: CPU.self)
 
-let images = originalImage.view(as: [-1, 28 * 28])
+let images = originalImage.view(as: [-1, 1, 28, 28])
 let labels = labelsCategorical.oneHotEncoded(dim: 10, type: Float.self)
 
 print("Creating networks...")
@@ -42,6 +42,7 @@ var optimCrit = Adam(model: critic, learningRate: 0.0001, beta1: 0.0, beta2: 0.9
 let batchSize = 32
 let epochs = 20_000
 let n_critic = 5
+let n_gen = 1
 let lambda = Tensor<Float, CPU>(10)
 
 print("Training...")
@@ -60,20 +61,23 @@ for epoch in 1 ... epochs {
         let genInputs = Tensor(stacking: [genNoiseInput, genLabelInput], along: 1)
         
         let fakeGenerated = optimGen.model(genInputs)
-        
         let eps = Tensor<Float, CPU>(Float.random(in: 0 ... 1))
         let mixed = real * eps + fakeGenerated * (1 - eps)
         
-        let genFakeInput = Tensor(stacking: [mixed, genLabelInput], along: 1)
+        let fakeDiscriminated = optimCrit.model((mixed, genLabelInput))
+        let realDiscriminated = optimCrit.model((real, realLabels))
         
-        let fakeDiscriminated = optimCrit.model(genFakeInput)
-        let realDiscriminated = optimCrit.model(Tensor(stacking: [real, realLabels], along: 1))
+        let criticDiscriminationLoss = OperationGroup.capture(named: "CriticDiscriminationLoss") {
+            fakeDiscriminated.reduceMean() - realDiscriminated.reduceMean()
+        }
         
-        let criticDiscriminationLoss = fakeDiscriminated.reduceMean() - realDiscriminated.reduceMean()
-
-        let fakeGeneratedGrad = fakeDiscriminated.gradients(of: [genFakeInput], retainBackwardsGraph: true)[0]
-        let partialPenaltyTerm = (fakeGeneratedGrad * fakeGeneratedGrad).reduceSum(along: [1]).sqrt() - 1
-        let gradientPenaltyLoss = lambda * (partialPenaltyTerm * partialPenaltyTerm).reduceMean()
+        let gradientPenaltyLoss = OperationGroup.capture(named: "GradientPenaltyLoss") { () -> Tensor<Float, CPU> in
+            let criticInputGrads = fakeDiscriminated.gradients(of: [mixed, genLabelInput], retainBackwardsGraph: true)
+            let fakeGeneratedGrad = Tensor(stacking: [criticInputGrads[0].view(as: batchSize, -1), criticInputGrads[1].view(as: batchSize, -1)], along: 1)
+            let partialPenaltyTerm = (fakeGeneratedGrad * fakeGeneratedGrad).reduceSum(along: [1]).sqrt() - 1
+            let gradientPenaltyLoss = lambda * (partialPenaltyTerm * partialPenaltyTerm).reduceMean()
+            return gradientPenaltyLoss
+        }
         
         let criticLoss = criticDiscriminationLoss + gradientPenaltyLoss
         let criticGradients = criticLoss.gradients(of: optimCrit.model.parameters)
@@ -84,22 +88,28 @@ for epoch in 1 ... epochs {
         lastGradientPenaltyLoss = gradientPenaltyLoss.detached()
     }
 
-    let genNoiseInput = Tensor<Float, CPU>(uniformlyDistributedWithShape: [batchSize, 50], min: 0, max: 1)
-    let genLabelInput = Tensor<Int32, CPU>(uniformlyDistributedWithShape: [batchSize], min: 0, max: 9)
-        .oneHotEncoded(dim: 10, type: Float.self)
+    var lastGeneratorLoss: Tensor<Float, CPU> = 0
     
-    let genInputs = Tensor(stacking: [genNoiseInput, genLabelInput], along: 1)
-    
-    let fakeGenerated = optimGen.model(genInputs)
-    let fakeDiscriminated = optimCrit.model(Tensor(stacking: [fakeGenerated, genLabelInput], along: 1))
-    let generatorLoss = -fakeDiscriminated.reduceMean()
-    
-    let generatorGradients = generatorLoss.gradients(of: optimGen.model.parameters)
+    for _ in 0 ..< n_gen {
+        let genNoiseInput = Tensor<Float, CPU>(uniformlyDistributedWithShape: [batchSize, 50], min: 0, max: 1)
+        let genLabelInput = Tensor<Int32, CPU>(uniformlyDistributedWithShape: [batchSize], min: 0, max: 9)
+            .oneHotEncoded(dim: 10, type: Float.self)
+        
+        let genInputs = Tensor(stacking: [genNoiseInput, genLabelInput], along: 1)
+        
+        let fakeGenerated = optimGen.model(genInputs)
+        let fakeDiscriminated = optimCrit.model((fakeGenerated, genLabelInput))
+        let generatorLoss = -fakeDiscriminated.reduceMean()
+        
+        lastGeneratorLoss = generatorLoss
+        let generatorGradients = generatorLoss.gradients(of: optimGen.model.parameters)
 
-    optimGen.update(along: generatorGradients)
+        optimGen.update(along: generatorGradients)
+    }
+    
 
-    if epoch.isMultiple(of: 100) {
-        print(" [\(epoch)/\(epochs)] loss c: \(lastCriticDiscriminationLoss), gp: \(lastGradientPenaltyLoss), g: \(generatorLoss)")
+    if epoch.isMultiple(of: 10) {
+        print(" [\(epoch)/\(epochs)] loss c: \(lastCriticDiscriminationLoss), gp: \(lastGradientPenaltyLoss), g: \(lastGeneratorLoss)")
     }
     
     if epoch.isMultiple(of: 1000) {

@@ -1,10 +1,12 @@
-# WGAN-GP in DL4S
+# Deep Convolutional WGAN-GP in DL4S
 
-This package contains an implementation of a Wasserstein-GAN with gradient penalty ([Gulrajani et al.](https://arxiv.org/abs/1704.00028)) in DL4S.
+This package contains an implementation of a Deep Convolutional Wasserstein-GAN with gradient penalty ([Gulrajani et al.](https://arxiv.org/abs/1704.00028)) in DL4S.
 
 A Wasserstein-GAN replaces the discriminator with a critic, which can output values in the range (-infinity, infinity) instead of (0, 1).
 The critic is required to be 1-Lipschitz, which can either be achieved by gradient clipping or using a gradient penalty as part of the loss term (which is more stable).
 This implementation focusses on the latter.
+
+Furthermore, it uses transposed convolutions and batch normalization in the generator as well as convolutions in the critic.
 
 ### Running the Code
 
