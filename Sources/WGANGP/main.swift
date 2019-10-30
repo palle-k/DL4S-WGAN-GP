@@ -35,8 +35,8 @@ let labels = labelsCategorical.oneHotEncoded(dim: 10, type: Float.self)
 
 print("Creating networks...")
 
-var optimGen = Adam(model: generator, learningRate: 0.0001, beta1: 0.0, beta2: 0.9)
-var optimCrit = Adam(model: critic, learningRate: 0.0001, beta1: 0.0, beta2: 0.9)
+var optimGen = Adam(model: generator, learningRate: 0.0002, beta1: 0.0, beta2: 0.9)
+var optimCrit = Adam(model: critic, learningRate: 0.0002, beta1: 0.0, beta2: 0.9)
 
 
 let batchSize = 32
