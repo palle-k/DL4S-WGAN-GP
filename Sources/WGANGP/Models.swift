@@ -57,7 +57,7 @@ struct Critic<Element: RandomizableType, Device: DeviceType>: LayerType {
     }
     
     var convolutions = Sequential {
-        Convolution2D<Element, Device>(inputChannels: 1, outputChannels: 6, kernelSize: (3, 3), padding: 2, stride: 2)  // 16x16
+        Convolution2D<Element, Device>(inputChannels: 1, outputChannels: 6, kernelSize: (3, 3), padding: 3, stride: 2)  // 16x16
         BatchNorm<Element, Device>(inputSize: [6, 16, 16])
         LeakyRelu<Element, Device>(leakage: 0.2)
         
