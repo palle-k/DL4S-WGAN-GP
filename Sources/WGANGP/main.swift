@@ -39,13 +39,16 @@ var optimGen = Adam(model: generator, learningRate: 0.0002, beta1: 0.0, beta2: 0
 var optimCrit = Adam(model: critic, learningRate: 0.0002, beta1: 0.0, beta2: 0.9)
 
 
-let batchSize = 32
+let batchSize = 128
 let epochs = 20_000
-let n_critic = 5
-let n_gen = 1
+var n_critic = 5
+var n_gen = 1
 let lambda = Tensor<Float, CPU>(10)
 
 print("Training...")
+
+var runningMeanCriticLoss: Float = 0
+var runningMeanGeneratorLoss: Float = 0
 
 for epoch in 1 ... epochs {
     var lastCriticDiscriminationLoss: Tensor<Float, CPU> = 0
@@ -107,9 +110,27 @@ for epoch in 1 ... epochs {
         optimGen.update(along: generatorGradients)
     }
     
-
+    runningMeanCriticLoss = 0.1 * lastCriticDiscriminationLoss.item + 0.9 * runningMeanCriticLoss
+    runningMeanGeneratorLoss = 0.1 * lastGeneratorLoss.item + 0.9 * runningMeanGeneratorLoss
+    
+    if runningMeanCriticLoss > 50 || runningMeanGeneratorLoss < -100 {
+        n_critic = 7
+    } else if runningMeanCriticLoss < -50 {
+        n_critic = 3
+    } else {
+        n_critic = 5
+    }
+    
+    if runningMeanGeneratorLoss > 100 {
+        n_gen = 3
+    } else if runningMeanGeneratorLoss > 50 {
+        n_gen = 2
+    } else {
+        n_gen = 1
+    }
+    
     if epoch.isMultiple(of: 10) {
-        print(" [\(epoch)/\(epochs)] loss c: \(lastCriticDiscriminationLoss), gp: \(lastGradientPenaltyLoss), g: \(lastGeneratorLoss)")
+        print(" [\(epoch)/\(epochs)] [ratio: \(n_critic):\(n_gen)] loss c: \(lastCriticDiscriminationLoss), gp: \(lastGradientPenaltyLoss), g: \(lastGeneratorLoss)")
     }
     
     if epoch.isMultiple(of: 1000) {
