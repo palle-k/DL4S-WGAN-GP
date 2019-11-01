@@ -25,7 +25,7 @@
 
 import DL4S
 import Foundation
-import AppKit
+import SwiftGD
 
 
 let (originalImage, labelsCategorical) = loadMNIST(from: "./MNIST/", type: Float.self, device: CPU.self)
@@ -35,11 +35,11 @@ let labels = labelsCategorical.oneHotEncoded(dim: 10, type: Float.self)
 
 print("Creating networks...")
 
-var optimGen = Adam(model: generator, learningRate: 0.0002, beta1: 0.0, beta2: 0.9)
-var optimCrit = Adam(model: critic, learningRate: 0.0002, beta1: 0.0, beta2: 0.9)
+var optimGen = Adam(model: generator, learningRate: 0.0001, beta1: 0.0, beta2: 0.9)
+var optimCrit = Adam(model: critic, learningRate: 0.0001, beta1: 0.0, beta2: 0.9)
 
 
-let batchSize = 32
+let batchSize = 64
 let epochs = 20_000
 let n_critic = 5
 let n_gen = 1
@@ -123,14 +123,11 @@ for epoch in 1 ... epochs {
         
         for i in 0 ..< 32 {
             let slice = fakeGenerated[i].permuted(to: [1, 0]).unsqueezed(at: 0)
-            guard let image = NSImage(slice), let imgData = image.tiffRepresentation else {
-                continue
+            guard let image = Image(slice) else {
+                fatalError("Could not make image.")
             }
-            guard let rep = NSBitmapImageRep(data: imgData) else {
-                continue
-            }
-            let png = rep.representation(using: .png, properties: [:])
-            try? png?.write(to: URL(fileURLWithPath: "./generated/gen_\(epoch)_\(i).png"))
+            let destination = URL(fileURLWithPath: "./generated/gen_\(epoch)_\(i).png")
+            image.write(to: destination)
         }
     }
 }

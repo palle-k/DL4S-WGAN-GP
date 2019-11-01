@@ -6,8 +6,17 @@
         "repositoryURL": "https://github.com/palle-k/DL4S.git",
         "state": {
           "branch": "develop",
-          "revision": "adf2f249cd59b938c96d8c256cb485b1c53a5571",
+          "revision": "07df8dc211ded58c4a765b63623a8b00e4921ccb",
           "version": null
+        }
+      },
+      {
+        "package": "SwiftGD",
+        "repositoryURL": "https://github.com/twostraws/SwiftGD",
+        "state": {
+          "branch": null,
+          "revision": "1960998971b453101e740f25bc6d9fb01e0ba225",
+          "version": "2.5.0"
         }
       }
     ]
