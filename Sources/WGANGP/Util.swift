@@ -25,6 +25,7 @@
 
 import Foundation
 import DL4S
+import SwiftGD
 
 
 func loadMNIST<Element, Device>(from path: String, type: Element.Type = Element.self, device: Device.Type = Device.self) -> (Tensor<Element, Device>, Tensor<Int32, Device>) {
@@ -35,4 +36,37 @@ func loadMNIST<Element, Device>(from path: String, type: Element.Type = Element.
     let trainLabels = Tensor<Int32, Device>(trainingLabelData.dropFirst(8).prefix(60_000).map(Int32.init))
     
     return (trainImages.view(as: [-1, 1, 28, 28]), trainLabels)
+}
+
+
+extension Image {
+    convenience init?<E: NumericType, D: DeviceType>(_ tensor: Tensor<E, D>) {
+        precondition(2 ... 3 ~= tensor.dim, "Tensor must have 2 or 3 dimensions.")
+        let t: Tensor<E, D>
+        if tensor.dim == 3 {
+            t = tensor.detached()
+        } else {
+            t = tensor.detached().unsqueezed(at: 0)
+        }
+
+        let (width, height) = (t.shape[2], t.shape[1])
+        self.init(width: width, height: height)
+
+        for y in 0 ..< height {
+            for x in 0 ..< width {
+                let color: Color
+                let slice = t[nil, y, x]
+                if slice.count == 1 {
+                    color = Color(red: slice[0].item.doubleValue, green: slice[0].item.doubleValue, blue: slice[0].item.doubleValue, alpha: 1)
+                } else if slice.count == 3 {
+                    color = Color(red: slice[0].item.doubleValue, green: slice[1].item.doubleValue, blue: slice[2].item.doubleValue, alpha: 1)
+                } else if slice.count == 4 {
+                    color = Color(red: slice[0].item.doubleValue, green: slice[1].item.doubleValue, blue: slice[2].item.doubleValue, alpha: slice[3].item.doubleValue)
+                } else {
+                    fatalError("Unsupported format. Tensor must have shape [height, width], [1, height, width], [3, height, width] or [4, height, width]")
+                }
+                self.set(pixel: Point(x: x, y: y), to: color)
+            }
+        }
+    }
 }

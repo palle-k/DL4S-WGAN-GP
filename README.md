@@ -15,7 +15,13 @@ Download the [MNIST training images](http://yann.lecun.com/exdb/mnist/train-imag
 Navigate into the root directory of this repository and run using:
 
 ```bash
+# Linux without MKL or macOS
 swift run -c release
+# Linux with MKL
+swift run -c release \
+    -Xswiftc -DMKL_ENABLE \
+    -Xlinker -L/opt/intel/mkl/lib/intel64 \
+    -Xlinker -L/opt/intel/ipp/lib/intel64
 ```
 
 Every 1000 iterations, a set of images is generated and written to ./generated/
