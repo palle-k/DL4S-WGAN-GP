@@ -152,7 +152,7 @@ for epoch in 1 ... epochs {
         let fakeGenerated = optimGen.model(genInputs).view(as: [-1, 28, 28])
         
         for i in 0 ..< 32 {
-            let slice = fakeGenerated[i].permuted(to: [1, 0]).unsqueezed(at: 0)
+            let slice = fakeGenerated[i].unsqueezed(at: 0)
             guard let image = Image(slice) else {
                 fatalError("Could not make image.")
             }
