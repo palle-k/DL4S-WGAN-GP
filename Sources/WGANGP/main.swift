@@ -65,24 +65,33 @@ for epoch in 1 ... epochs {
         
         let fakeGenerated = optimGen.model(genInputs)
         let eps = Tensor<Float, CPU>(Float.random(in: 0 ... 1))
-        let mixed = real * eps + fakeGenerated * (1 - eps)
         
-        let fakeDiscriminated = optimCrit.model((mixed, genLabelInput))
+        var mixed = (real * eps + fakeGenerated * (1 - eps)).detached()
+        mixed.requiresGradient = true
+        
+        var mixedLabels = realLabels * eps + genLabelInput * (1 - eps)
+        mixedLabels.requiresGradient = true
+        
+        let fakeDiscriminated = optimCrit.model((fakeGenerated, genLabelInput))
         let realDiscriminated = optimCrit.model((real, realLabels))
+        let mixedDiscriminated = optimCrit.model((mixed, mixedLabels))
         
-        let criticDiscriminationLoss = OperationGroup.capture(named: "CriticDiscriminationLoss") {
+        let criticDiscriminationLoss = OperationGroup.capture(named: "Wasserstein Loss") {
             fakeDiscriminated.reduceMean() - realDiscriminated.reduceMean()
         }
         
-        let gradientPenaltyLoss = OperationGroup.capture(named: "GradientPenaltyLoss") { () -> Tensor<Float, CPU> in
-            let criticInputGrads = fakeDiscriminated.gradients(of: [mixed, genLabelInput], retainBackwardsGraph: true)
-            let fakeGeneratedGrad = Tensor(stacking: [criticInputGrads[0].view(as: batchSize, -1), criticInputGrads[1].view(as: batchSize, -1)], along: 1)
-            let partialPenaltyTerm = (fakeGeneratedGrad * fakeGeneratedGrad).reduceSum(along: [1]).sqrt() - 1
-            let gradientPenaltyLoss = lambda * (partialPenaltyTerm * partialPenaltyTerm).reduceMean()
+        let gradientPenaltyLoss = OperationGroup.capture(named: "Gradient Penalty") { () -> Tensor<Float, CPU> in
+            let criticInputGrads = mixedDiscriminated.gradients(of: [mixed, mixedLabels], retainBackwardsGraph: true)
+            
+            let mixedGrads = Tensor(stacking: [criticInputGrads[0].view(as: batchSize, -1), criticInputGrads[1].view(as: batchSize, -1)], along: 1)
+            
+            let partialPenaltyTerm = (mixedGrads * mixedGrads).reduceSum(along: [1]).sqrt() - 1
+            let gradientPenaltyLoss = (partialPenaltyTerm * partialPenaltyTerm).reduceMean()
             return gradientPenaltyLoss
         }
         
-        let criticLoss = criticDiscriminationLoss + gradientPenaltyLoss
+        let criticLoss = criticDiscriminationLoss + lambda * gradientPenaltyLoss
+        
         let criticGradients = criticLoss.gradients(of: optimCrit.model.parameters)
         
         optimCrit.update(along: criticGradients)
@@ -133,7 +142,7 @@ for epoch in 1 ... epochs {
         print(" [\(epoch)/\(epochs)] [ratio: \(n_critic):\(n_gen)] loss c: \(lastCriticDiscriminationLoss), gp: \(lastGradientPenaltyLoss), g: \(lastGeneratorLoss)")
     }
     
-    if epoch.isMultiple(of: 1000) {
+    if epoch.isMultiple(of: 500) {
         let genNoiseInput = Tensor<Float, CPU>(uniformlyDistributedWithShape: [batchSize, 50], min: 0, max: 1)
         let genLabelInput = Tensor<Int32, CPU>(uniformlyDistributedWithShape: [batchSize], min: 0, max: 9)
             .oneHotEncoded(dim: 10, type: Float.self)

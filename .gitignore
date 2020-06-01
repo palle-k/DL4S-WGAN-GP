@@ -6,3 +6,5 @@ xcuserdata/
 /generated/*.png
 *.idx3-ubyte
 *.idx1-ubyte
+/generated_incorrect/*.png
+.swiftpm
