@@ -1,10 +1,10 @@
 # Deep Convolutional WGAN-GP in DL4S
 
-This package contains an implementation of a Deep Convolutional Wasserstein-GAN with gradient penalty ([Gulrajani et al.](https://arxiv.org/abs/1704.00028)) in DL4S.
+This package contains an implementation of a Deep Convolutional Wasserstein-GAN with gradient penalty ([Gulrajani et al.](https://arxiv.org/abs/1704.00028)) in [DL4S](https://github.com/palle-k/DL4S).
 
 A Wasserstein-GAN replaces the discriminator with a critic, which can output values in the range (-infinity, infinity) instead of (0, 1).
-The critic is required to be 1-Lipschitz, which can either be achieved by weight clipping or using a gradient penalty as part of the loss term (which is more stable).
-This implementation focusses on the latter.
+The critic is required to be 1-Lipschitz, which can either be achieved by weight clipping or using a gradient penalty as part of the loss term (the latter of which is more stable).
+This implementation therefore focusses on the gradient penalty variant.
 
 Furthermore, it uses transposed convolutions and batch normalization in the generator as well as convolutions in the critic.
 
@@ -15,9 +15,9 @@ Download the [MNIST training images](http://yann.lecun.com/exdb/mnist/train-imag
 Navigate into the root directory of this repository and run using:
 
 ```bash
-# Linux without MKL or macOS
+# Without MKL
 swift run -c release
-# Linux with MKL
+# With MKL (on Linux)
 swift run -c release \
     -Xswiftc -DMKL_ENABLE \
     -Xlinker -L/opt/intel/mkl/lib/intel64 \

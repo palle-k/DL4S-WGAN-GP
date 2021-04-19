@@ -6,7 +6,7 @@
         "repositoryURL": "https://github.com/palle-k/DL4S.git",
         "state": {
           "branch": "master",
-          "revision": "e4c436c9c965ad72615d6b83f455778768452b4c",
+          "revision": "e0d4776b61343ba2d3438fdb50f6cf7e85cc10c0",
           "version": null
         }
       },
@@ -15,7 +15,7 @@
         "repositoryURL": "https://github.com/palle-k/DL4S-Tensorboard.git",
         "state": {
           "branch": "master",
-          "revision": "4d98033d0f414a8db4c39792c0a36e045c1dd1c1",
+          "revision": "17533187538e86783b256e2f954e327eb21b2555",
           "version": null
         }
       },
@@ -24,8 +24,8 @@
         "repositoryURL": "https://github.com/apple/swift-protobuf.git",
         "state": {
           "branch": null,
-          "revision": "7f36441e3372665b1b414f8ac93b5905cc42a405",
-          "version": "1.9.0"
+          "revision": "bfe4255ff60f22a41cafa113059668571ed5d461",
+          "version": "1.16.0"
         }
       },
       {

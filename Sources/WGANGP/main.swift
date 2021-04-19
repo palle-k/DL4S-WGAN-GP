@@ -66,18 +66,24 @@ for epoch in 1 ... epochs {
     var lastCriticDiscriminationLoss: Tensor<Float, CPU> = 0
     var lastGradientPenaltyLoss: Tensor<Float, CPU> = 0
     
+    // for every generator optimization step, the discriminator can be updated multiple times.
+    // for a wgan, the critic can be trained towards optimality without gradients becoming unstable
     for _ in 0 ..< n_critic {
+        // split batch over multiple threads
         let results = DispatchQueue.concurrentPerform(units: workers, workers: workers) { _ -> ((Tensor<Float, CPU>, Tensor<Float, CPU>), [Tensor<Float, CPU>]) in
             let batchSize = totalBatchSize / workers
             
+            // sample from real distribution
             let (real, _) = Random.minibatch(from: images, labels: labels, count: batchSize)
             
+            // sample from generated distribution
             let genInputs = Tensor<Float, CPU>(uniformlyDistributedWithShape: [batchSize, 256], min: 0, max: 1)
-            
             let fakeGenerated = optimGen.model(genInputs)
-            let eps = Tensor<Float, CPU>(Float.random(in: 0 ... 1))
             
+            // interpolate between generated and real sample
+            let eps = Tensor<Float, CPU>(Float.random(in: 0 ... 1))
             var mixed = (real * eps + fakeGenerated * (1 - eps)).detached()
+            // we want to compute the gradient of the prediction wrt. mixed, so mixed requires a gradient
             mixed.requiresGradient = true
             
             let fakeDiscriminated = optimCrit.model(fakeGenerated)
@@ -89,9 +95,12 @@ for epoch in 1 ... epochs {
             }
             
             let gradientPenaltyLoss = OperationGroup.capture(named: "Gradient Penalty") { () -> Tensor<Float, CPU> in
+                // compute gradient of prediction wrt. mixed.
+                // retain the backward graph, so that we can compute the gradient of the model weights wrt. an expression derived from a gradient.
                 let mixedGrads = mixedDiscriminated.gradients(of: [mixed], retainBackwardsGraph: true)[0]
                     .view(as: batchSize, -1)
                 
+                // model should be somewhat linear, so gradient of mixed must be close to 1.
                 let partialPenaltyTerm = (mixedGrads * mixedGrads).reduceSum(along: [1]).sqrt() - 1
                 let gradientPenaltyLoss = (partialPenaltyTerm * partialPenaltyTerm).reduceMean()
                 return gradientPenaltyLoss
@@ -105,6 +114,7 @@ for epoch in 1 ... epochs {
             )
         }
         
+        // combine gradients from all threads.
         let (losses, criticGradsBatch) = unzip(results)
         let criticGradients = criticGradsBatch.dropFirst().reduce(criticGradsBatch.first!) { acc, grads in
             zip(acc, grads).map(+)
@@ -122,6 +132,7 @@ for epoch in 1 ... epochs {
     var lastGeneratorLoss: Tensor<Float, CPU> = 0
     
     for _ in 0 ..< n_gen {
+        // split computation over multiple threads
         let results = DispatchQueue.concurrentPerform(units: workers, workers: workers) { _ -> (Tensor<Float, CPU>, [Tensor<Float, CPU>]) in
             let batchSize = totalBatchSize / workers
             
@@ -138,6 +149,7 @@ for epoch in 1 ... epochs {
         
         let (losses, grads) = unzip(results)
         
+        // combine gradients from all threads
         lastGeneratorLoss = losses.reduce(0, +) / Tensor(Float(workers))
         let generatorGradients = grads.dropFirst().reduce(grads.first!) { acc, grads in
             zip(acc, grads).map(+)
@@ -156,6 +168,7 @@ for epoch in 1 ... epochs {
         print(" [\(epoch)/\(epochs)] [ratio: \(n_critic):\(n_gen)] loss c: \(lastCriticDiscriminationLoss), gp: \(lastGradientPenaltyLoss), g: \(lastGeneratorLoss)")
     }
     
+    // save some samples every 100 iterations
     if epoch.isMultiple(of: 100) {
         do {
             try writeModels(epoch)
