@@ -5,9 +5,27 @@
         "package": "DL4S",
         "repositoryURL": "https://github.com/palle-k/DL4S.git",
         "state": {
-          "branch": "develop",
-          "revision": "b0ee3d5df50cf829a65341c0f216ce89681c9187",
+          "branch": "master",
+          "revision": "e4c436c9c965ad72615d6b83f455778768452b4c",
           "version": null
+        }
+      },
+      {
+        "package": "DL4STensorboard",
+        "repositoryURL": "https://github.com/palle-k/DL4S-Tensorboard.git",
+        "state": {
+          "branch": "master",
+          "revision": "4d98033d0f414a8db4c39792c0a36e045c1dd1c1",
+          "version": null
+        }
+      },
+      {
+        "package": "SwiftProtobuf",
+        "repositoryURL": "https://github.com/apple/swift-protobuf.git",
+        "state": {
+          "branch": null,
+          "revision": "7f36441e3372665b1b414f8ac93b5905cc42a405",
+          "version": "1.9.0"
         }
       },
       {

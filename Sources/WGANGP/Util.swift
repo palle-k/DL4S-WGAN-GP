@@ -28,6 +28,39 @@ import DL4S
 import SwiftGD
 
 
+extension DispatchQueue {
+    static func concurrentPerform<Result>(units: Int, workers: Int, task: @escaping (Int) -> Result) -> [Result] {
+        let sema = DispatchSemaphore(value: 0)
+        let tasksPerWorker = units / workers
+        
+        var results = [Result?](repeating: nil, count: units)
+        
+        for workerID in 0 ..< workers {
+            let taskRange: CountableRange<Int>
+            if workerID == workers - 1 {
+                taskRange = tasksPerWorker * workerID ..< units
+            } else {
+                taskRange = tasksPerWorker * workerID ..< tasksPerWorker * (workerID + 1)
+            }
+            
+            DispatchQueue.global().async {
+                for unitID in taskRange {
+                    results[unitID] = task(unitID)
+                }
+                
+                sema.signal()
+            }
+        }
+        
+        for _ in 0 ..< workers {
+            sema.wait()
+        }
+        
+        return results.compactMap {$0}
+    }
+}
+
+
 func loadMNIST<Element, Device>(from path: String, type: Element.Type = Element.self, device: Device.Type = Device.self) -> (Tensor<Element, Device>, Tensor<Int32, Device>) {
     let trainingData = try! Data(contentsOf: URL(fileURLWithPath: path + "train-images.idx3-ubyte"))
     let trainingLabelData = try! Data(contentsOf: URL(fileURLWithPath: path + "train-labels.idx1-ubyte"))
@@ -69,4 +102,18 @@ extension Image {
             }
         }
     }
+}
+
+func unzip<U, V, S: Sequence>(_ sequence: S) -> ([U], [V]) where S.Element == (U, V) {
+    var u: [U] = []
+    var v: [V] = []
+    u.reserveCapacity(sequence.underestimatedCount)
+    v.reserveCapacity(sequence.underestimatedCount)
+    
+    for (ue, ve) in sequence {
+        u.append(ue)
+        v.append(ve)
+    }
+    
+    return (u, v)
 }

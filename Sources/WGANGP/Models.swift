@@ -41,11 +41,11 @@ let generator = Sequential {
     BatchNorm<Float, CPU>(inputSize: [3, 29, 29])
     LeakyRelu<Float, CPU>(leakage: 0.2)
     
-    Convolution2D<Float, CPU>(inputChannels: 3, outputChannels: 1, kernelSize: (2, 2), padding: 0, stride: 1)
+    Convolution2D<Float, CPU>(inputChannels: 3, outputChannels: 1, kernelSize: (2, 2), padding: 0, stride: 1) // [1, 28, 28]
     Sigmoid<Float, CPU>()
 }
 
-struct Critic<Element: RandomizableType, Device: DeviceType>: LayerType {
+struct Critic<Element: RandomizableType, Device: DeviceType>: LayerType, Codable {
     var parameters: [Tensor<Element, Device>] {
         convolutions.parameters + classifier.parameters
     }
@@ -97,3 +97,83 @@ struct Critic<Element: RandomizableType, Device: DeviceType>: LayerType {
 }
 
 let critic = Critic<Float, CPU>()
+
+let generatorV2 = Sequential {
+    Sequential {
+        Dense<Float, CPU>(inputSize: 256, outputSize: 1024)
+        BatchNorm<Float, CPU>(inputSize: [1024])
+        LeakyRelu<Float, CPU>(leakage: 0.2)
+        
+        Reshape<Float, CPU>(outputShape: [16, 8, 8])
+    }
+    
+    Sequential {
+        TransposedConvolution2D<Float, CPU>(inputChannels: 16, outputChannels: 12, kernelSize: (3, 3), inset: 1, stride: 2)
+        BatchNorm<Float, CPU>(inputSize: [12, 15, 15])
+        LeakyRelu<Float, CPU>(leakage: 0.2)
+    }
+    
+    Sequential {
+        Convolution2D<Float, CPU>(inputChannels: 12, outputChannels: 12, kernelSize: (3, 3), padding: 1)
+        BatchNorm<Float, CPU>(inputSize: [12, 15, 15])
+        LeakyRelu<Float, CPU>(leakage: 0.2)
+    }
+    
+    Sequential {
+        TransposedConvolution2D<Float, CPU>(inputChannels: 12, outputChannels: 8, kernelSize: (3, 3), inset: 1, stride: 2)
+        BatchNorm<Float, CPU>(inputSize: [8, 29, 29])
+        LeakyRelu<Float, CPU>(leakage: 0.2)
+    }
+    
+    Sequential {
+        Convolution2D<Float, CPU>(inputChannels: 8, outputChannels: 8, kernelSize: (3, 3), padding: 1)
+        BatchNorm<Float, CPU>(inputSize: [8, 29, 29])
+        LeakyRelu<Float, CPU>(leakage: 0.2)
+    }
+    
+    Sequential {
+        Convolution2D<Float, CPU>(inputChannels: 8, outputChannels: 4, kernelSize: (2, 2), padding: 0, stride: 1) // [8, 28, 28]
+        BatchNorm<Float, CPU>(inputSize: [4, 28, 28])
+        LeakyRelu<Float, CPU>(leakage: 0.2)
+    }
+    
+    Sequential {
+        Convolution2D<Float, CPU>(inputChannels: 4, outputChannels: 1, kernelSize: (1, 1), padding: 0, stride: 1) // [1, 28, 28]
+        Sigmoid<Float, CPU>()
+    }
+    
+}
+
+let criticV2 = Sequential {
+    Sequential {
+        Convolution2D<Float, CPU>(inputChannels: 1, outputChannels: 8, kernelSize: (3, 3), padding: 3)  // 32x32
+        Relu<Float, CPU>()
+    }
+    
+    Sequential {
+        Convolution2D<Float, CPU>(inputChannels: 8, outputChannels: 16, kernelSize: (3, 3))  // 32x32
+        Relu<Float, CPU>()
+        MaxPool2D<Float, CPU>(windowSize: 2, stride: 2, padding: 0) // 16x16
+    }
+    
+    Sequential {
+        Convolution2D<Float, CPU>(inputChannels: 16, outputChannels: 32, kernelSize: (3, 3))  // 16x16
+        Relu<Float, CPU>()
+        MaxPool2D<Float, CPU>(windowSize: 2, stride: 2, padding: 0) // 8x8
+    }
+    
+    Sequential {
+        Convolution2D<Float, CPU>(inputChannels: 32, outputChannels: 48, kernelSize: (3, 3))  // 8x8
+        Relu<Float, CPU>()
+        MaxPool2D<Float, CPU>(windowSize: 2, stride: 2, padding: 0) // 4x4
+    }
+    
+    Flatten<Float, CPU>() // 768
+    
+    Sequential {
+        Dense<Float, CPU>(inputSize: 768, outputSize: 128)
+        Relu<Float, CPU>()
+    }
+    
+    Dense<Float, CPU>(inputSize: 128, outputSize: 1)
+}

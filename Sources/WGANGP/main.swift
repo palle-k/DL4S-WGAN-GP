@@ -3,7 +3,7 @@
 //  WGANGP
 //
 //  Created by Palle Klewitz on 20.10.19.
-//  Copyright (c) 2019 Palle Klewitz
+//  Copyright (c) 2019 - 2020 Palle Klewitz
 // 
 //  Permission is hereby granted, free of charge, to any person obtaining a copy
 //  of this software and associated documentation files (the "Software"), to deal
@@ -24,6 +24,7 @@
 //  SOFTWARE.
 
 import DL4S
+import DL4STensorboard
 import Foundation
 import SwiftGD
 
@@ -35,129 +36,141 @@ let labels = labelsCategorical.oneHotEncoded(dim: 10, type: Float.self)
 
 print("Creating networks...")
 
-var optimGen = Adam(model: generator, learningRate: 0.0002, beta1: 0.0, beta2: 0.9)
-var optimCrit = Adam(model: critic, learningRate: 0.0002, beta1: 0.0, beta2: 0.9)
+var optimGen = Adam(model: generatorV2, learningRate: 0.001, beta1: 0.0, beta2: 0.9)
+var optimCrit = Adam(model: criticV2, learningRate: 0.001, beta1: 0.0, beta2: 0.9)
 
+func writeModels(_ epoch: Int) throws {
+    let encoder = JSONEncoder()
+    encoder.dataEncodingStrategy = .base64
+    
+    let genData = try encoder.encode(optimGen)
+    try genData.write(to: URL(fileURLWithPath: "./generator_v2.\(epoch).json"))
+    
+    let critData = try encoder.encode(optimCrit)
+    try critData.write(to: URL(fileURLWithPath: "./critic_v2.\(epoch).json"))
+}
 
-let batchSize = 128
+let totalBatchSize = 256
+let samplingBatchSize = 64
 let epochs = 50_000
 var n_critic = 5
 var n_gen = 1
-let lambda = Tensor<Float, CPU>(10)
+let lambda: Tensor<Float, CPU> = 10
+let workers = 8
 
 print("Training...")
 
-var runningMeanCriticLoss: Float = 0
-var runningMeanGeneratorLoss: Float = 0
+let writer = try TensorboardWriter(logDirectory: URL(fileURLWithPath: "./logs"), runName: "bs256_v2_5v1_l10_run3")
 
 for epoch in 1 ... epochs {
     var lastCriticDiscriminationLoss: Tensor<Float, CPU> = 0
     var lastGradientPenaltyLoss: Tensor<Float, CPU> = 0
     
     for _ in 0 ..< n_critic {
-        let (real, realLabels) = Random.minibatch(from: images, labels: labels, count: batchSize)
-        
-        let genNoiseInput = Tensor<Float, CPU>(uniformlyDistributedWithShape: [batchSize, 50], min: 0, max: 1)
-        let genLabelInput = Tensor<Int32, CPU>(uniformlyDistributedWithShape: [batchSize], min: 0, max: 9)
-            .oneHotEncoded(dim: 10, type: Float.self)
-        
-        let genInputs = Tensor(stacking: [genNoiseInput, genLabelInput], along: 1)
-        
-        let fakeGenerated = optimGen.model(genInputs)
-        let eps = Tensor<Float, CPU>(Float.random(in: 0 ... 1))
-        
-        var mixed = (real * eps + fakeGenerated * (1 - eps)).detached()
-        mixed.requiresGradient = true
-        
-        var mixedLabels = realLabels * eps + genLabelInput * (1 - eps)
-        mixedLabels.requiresGradient = true
-        
-        let fakeDiscriminated = optimCrit.model((fakeGenerated, genLabelInput))
-        let realDiscriminated = optimCrit.model((real, realLabels))
-        let mixedDiscriminated = optimCrit.model((mixed, mixedLabels))
-        
-        let criticDiscriminationLoss = OperationGroup.capture(named: "Wasserstein Loss") {
-            fakeDiscriminated.reduceMean() - realDiscriminated.reduceMean()
+        let results = DispatchQueue.concurrentPerform(units: workers, workers: workers) { _ -> ((Tensor<Float, CPU>, Tensor<Float, CPU>), [Tensor<Float, CPU>]) in
+            let batchSize = totalBatchSize / workers
+            
+            let (real, _) = Random.minibatch(from: images, labels: labels, count: batchSize)
+            
+            let genInputs = Tensor<Float, CPU>(uniformlyDistributedWithShape: [batchSize, 256], min: 0, max: 1)
+            
+            let fakeGenerated = optimGen.model(genInputs)
+            let eps = Tensor<Float, CPU>(Float.random(in: 0 ... 1))
+            
+            var mixed = (real * eps + fakeGenerated * (1 - eps)).detached()
+            mixed.requiresGradient = true
+            
+            let fakeDiscriminated = optimCrit.model(fakeGenerated)
+            let realDiscriminated = optimCrit.model(real)
+            let mixedDiscriminated = optimCrit.model(mixed)
+            
+            let criticDiscriminationLoss = OperationGroup.capture(named: "Wasserstein Loss") {
+                fakeDiscriminated.reduceMean() - realDiscriminated.reduceMean()
+            }
+            
+            let gradientPenaltyLoss = OperationGroup.capture(named: "Gradient Penalty") { () -> Tensor<Float, CPU> in
+                let mixedGrads = mixedDiscriminated.gradients(of: [mixed], retainBackwardsGraph: true)[0]
+                    .view(as: batchSize, -1)
+                
+                let partialPenaltyTerm = (mixedGrads * mixedGrads).reduceSum(along: [1]).sqrt() - 1
+                let gradientPenaltyLoss = (partialPenaltyTerm * partialPenaltyTerm).reduceMean()
+                return gradientPenaltyLoss
+            }
+            
+            let criticLoss = criticDiscriminationLoss + lambda * gradientPenaltyLoss
+            
+            return (
+                (criticDiscriminationLoss.detached(), gradientPenaltyLoss.detached()),
+                criticLoss.gradients(of: optimCrit.model.parameters)
+            )
         }
         
-        let gradientPenaltyLoss = OperationGroup.capture(named: "Gradient Penalty") { () -> Tensor<Float, CPU> in
-            let criticInputGrads = mixedDiscriminated.gradients(of: [mixed, mixedLabels], retainBackwardsGraph: true)
-            
-            let mixedGrads = Tensor(stacking: [criticInputGrads[0].view(as: batchSize, -1), criticInputGrads[1].view(as: batchSize, -1)], along: 1)
-            
-            let partialPenaltyTerm = (mixedGrads * mixedGrads).reduceSum(along: [1]).sqrt() - 1
-            let gradientPenaltyLoss = (partialPenaltyTerm * partialPenaltyTerm).reduceMean()
-            return gradientPenaltyLoss
+        let (losses, criticGradsBatch) = unzip(results)
+        let criticGradients = criticGradsBatch.dropFirst().reduce(criticGradsBatch.first!) { acc, grads in
+            zip(acc, grads).map(+)
+        }.map { grad in
+            grad / Tensor(Float(workers))
         }
-        
-        let criticLoss = criticDiscriminationLoss + lambda * gradientPenaltyLoss
-        
-        let criticGradients = criticLoss.gradients(of: optimCrit.model.parameters)
         
         optimCrit.update(along: criticGradients)
         
-        lastCriticDiscriminationLoss = criticDiscriminationLoss.detached()
-        lastGradientPenaltyLoss = gradientPenaltyLoss.detached()
+        let (discriminationLosses, gradientPenaltyLosses) = unzip(losses)
+        lastCriticDiscriminationLoss = discriminationLosses.reduce(0, +) / Tensor(Float(workers))
+        lastGradientPenaltyLoss = gradientPenaltyLosses.reduce(0, +) / Tensor(Float(workers))
     }
 
     var lastGeneratorLoss: Tensor<Float, CPU> = 0
     
     for _ in 0 ..< n_gen {
-        let genNoiseInput = Tensor<Float, CPU>(uniformlyDistributedWithShape: [batchSize, 50], min: 0, max: 1)
-        let genLabelInput = Tensor<Int32, CPU>(uniformlyDistributedWithShape: [batchSize], min: 0, max: 9)
-            .oneHotEncoded(dim: 10, type: Float.self)
+        let results = DispatchQueue.concurrentPerform(units: workers, workers: workers) { _ -> (Tensor<Float, CPU>, [Tensor<Float, CPU>]) in
+            let batchSize = totalBatchSize / workers
+            
+            let genInputs = Tensor<Float, CPU>(uniformlyDistributedWithShape: [batchSize, 256], min: 0, max: 1)
+            
+            let fakeGenerated = optimGen.model(genInputs)
+            let fakeDiscriminated = optimCrit.model(fakeGenerated)
+            let generatorLoss = -fakeDiscriminated.reduceMean()
+            
+            let generatorGradients = generatorLoss.gradients(of: optimGen.model.parameters)
+            
+            return (generatorLoss, generatorGradients)
+        }
         
-        let genInputs = Tensor(stacking: [genNoiseInput, genLabelInput], along: 1)
+        let (losses, grads) = unzip(results)
         
-        let fakeGenerated = optimGen.model(genInputs)
-        let fakeDiscriminated = optimCrit.model((fakeGenerated, genLabelInput))
-        let generatorLoss = -fakeDiscriminated.reduceMean()
-        
-        lastGeneratorLoss = generatorLoss
-        let generatorGradients = generatorLoss.gradients(of: optimGen.model.parameters)
+        lastGeneratorLoss = losses.reduce(0, +) / Tensor(Float(workers))
+        let generatorGradients = grads.dropFirst().reduce(grads.first!) { acc, grads in
+            zip(acc, grads).map(+)
+        }.map { grad in
+            grad / Tensor(Float(workers))
+        }
 
         optimGen.update(along: generatorGradients)
     }
     
-    runningMeanCriticLoss = 0.1 * lastCriticDiscriminationLoss.item + 0.9 * runningMeanCriticLoss
-    runningMeanGeneratorLoss = 0.1 * lastGeneratorLoss.item + 0.9 * runningMeanGeneratorLoss
-    
-    if runningMeanCriticLoss > 50 || runningMeanGeneratorLoss < -100 {
-        n_critic = 7
-    } else if runningMeanCriticLoss < -50 {
-        n_critic = 3
-    } else {
-        n_critic = 5
-    }
-    
-    if runningMeanGeneratorLoss > 100 {
-        n_gen = 3
-    } else if runningMeanGeneratorLoss > 50 {
-        n_gen = 2
-    } else {
-        n_gen = 1
-    }
+    try? writer.write(scalar: -lastCriticDiscriminationLoss.item, withTag: "critic/neg_loss", atStep: epoch)
+    try? writer.write(scalar: lastGradientPenaltyLoss.item, withTag: "critic/gradient_penalty", atStep: epoch)
+    try? writer.write(scalar: lastGeneratorLoss.item, withTag: "generator/loss", atStep: epoch)
     
     if epoch.isMultiple(of: 10) {
         print(" [\(epoch)/\(epochs)] [ratio: \(n_critic):\(n_gen)] loss c: \(lastCriticDiscriminationLoss), gp: \(lastGradientPenaltyLoss), g: \(lastGeneratorLoss)")
     }
     
-    if epoch.isMultiple(of: 500) {
-        let genNoiseInput = Tensor<Float, CPU>(uniformlyDistributedWithShape: [batchSize, 50], min: 0, max: 1)
-        let genLabelInput = Tensor<Int32, CPU>(uniformlyDistributedWithShape: [batchSize], min: 0, max: 9)
-            .oneHotEncoded(dim: 10, type: Float.self)
+    if epoch.isMultiple(of: 100) {
+        do {
+            try writeModels(epoch)
+        } catch {
+            print("Could not write models")
+        }
         
-        let genInputs = Tensor(stacking: [genNoiseInput, genLabelInput], along: 1)
-        
+        let genInputs = Tensor<Float, CPU>(uniformlyDistributedWithShape: [samplingBatchSize, 256], min: 0, max: 1)
         let fakeGenerated = optimGen.model(genInputs).view(as: [-1, 28, 28])
         
-        for i in 0 ..< 32 {
+        for i in 0 ..< samplingBatchSize {
             let slice = fakeGenerated[i].unsqueezed(at: 0)
-            guard let image = Image(slice) else {
-                fatalError("Could not make image.")
-            }
-            let destination = URL(fileURLWithPath: "./generated/gen_\(epoch)_\(i).png")
-            image.write(to: destination)
+            try? writer.write(image: slice, withTag: "generator/output", atStep: epoch)
         }
     }
 }
+
+try writeModels(epochs)
