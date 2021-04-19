@@ -35,16 +35,16 @@ let generated = optimGen.model(noise)
 let eps = Tensor<Float, CPU>(Float.random(in: 0 ... 1))
 let mixed = real * eps + generated * (1 - eps)
 
-let mixedCriticScore = optimCritic.model(mixed)riticScore.reduceMean()
+let criticScore = optimCritic.model(mixed).reduceMean()
 
 // Compute the gradient of the critic score wrt. the input of the critic.
 // By setting the retainBackwardsGraph flag to true, the compute graph of the backpropagation is captured.
 // Otherwise, the gradient penalty would not be differentiable wrt. the critic parameters.
 let grad = criticScore.gradients(of: [mixed], retainBackwardsGraph: true)[0]
-let tmp = sqrt((grad * grad).reduceSum(along: [1])) - 1
+let delta = sqrt((grad * grad).reduceSum(along: [1])) - 1
 
 // Compute a loss that constrains the magnitude of the gradient to 1. 
 // gradientPenaltyLoss can be used as a regular loss term.
-let gradientPenaltyLoss = (tmp * tmp).reduceMean()
+let gradientPenaltyLoss = (delta * delta).reduceMean()
 
 ```
